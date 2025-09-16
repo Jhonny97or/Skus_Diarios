@@ -1,51 +1,53 @@
-from fastapi import FastAPI, UploadFile, Form
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import StreamingResponse, JSONResponse
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import io
+from io import BytesIO
 
 app = FastAPI()
 
-@app.post("/convert")
+@app.get("/")
+def home():
+    return {"status": "API funcionando 🚀"}
+
+@app.post("/api/convert")
 async def convert_excel(
-    file: UploadFile,
-    dom: float = Form(0.30),
-    lun: float = Form(0.10),
-    mar: float = Form(0.10),
-    mie: float = Form(0.10),
-    jue: float = Form(0.10),
-    vie: float = Form(0.15),
-    sab: float = Form(0.15),
+    file: UploadFile = File(...),
+    domingo: float = Form(0.30),
+    lunes: float = Form(0.10),
+    martes: float = Form(0.10),
+    miercoles: float = Form(0.10),
+    jueves: float = Form(0.10),
+    viernes: float = Form(0.15),
+    sabado: float = Form(0.15)
 ):
     try:
-        # Pesos dinámicos
+        # =====================
+        # LEER ARCHIVO
+        # =====================
+        content = await file.read()
+        xls = pd.ExcelFile(BytesIO(content))
+
+        # tomar siempre la primera hoja
+        df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=1)
+
+        # =====================
+        # CONFIGURACIÓN
+        # =====================
         weights = {
-            6: dom, 0: lun, 1: mar, 2: mie,
-            3: jue, 4: vie, 5: sab
+            6: domingo,   # domingo
+            0: lunes,     # lunes
+            1: martes,
+            2: miercoles,
+            3: jueves,
+            4: viernes,
+            5: sabado
         }
-
-        # Leer Excel (intenta con header=1 primero, si no con header=0)
-        try:
-            df = pd.read_excel(file.file, sheet_name=0, header=1)
-        except:
-            file.file.seek(0)
-            df = pd.read_excel(file.file, sheet_name=0, header=0)
-
-        # Detectar automáticamente las columnas de semana
+        unit_price = 12
         week_cols = [c for c in df.columns if str(c).startswith("Semana")]
-        if not week_cols:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No se encontraron columnas que empiecen con 'Semana' en el archivo."}
-            )
-
-        # Fecha inicial (ajústala si cambia el calendario real)
         start_date = datetime(2025, 8, 31)
         week_starts = {col: start_date + timedelta(days=7*i) for i, col in enumerate(week_cols)}
-
-        unit_price = 12
-        results = []
 
         # =====================
         # FUNCIÓN DE DISTRIBUCIÓN
@@ -68,36 +70,34 @@ async def convert_excel(
                 if q > 0:
                     records.append({
                         "Dia": date.strftime("%m/%d/%Y"),
-                        "Referencia": row.get("NUEVO SAP", ""),
-                        "Número de Catálogo de Fabricante": row.get("Número de catálogo de fabricante", ""),
-                        "Código de Barras": row.get("Código de barras", ""),
-                        "Categoría": row.get("CATEGORIA", ""),
-                        "Descripción artículo/serv.": row.get("Descripción del artículo", ""),
+                        "Referencia": row["NUEVO SAP"],
+                        "Número de Catálogo de Fabricante": row["Número de catálogo de fabricante"],
+                        "Código de Barras": row["Código de barras"],
+                        "Categoría": row["CATEGORIA"],
+                        "Descripción artículo/serv.": row["Descripción del artículo"],
                         "qty": q,
                         "value": f"${q * unit_price:.2f}"
                     })
             return records
 
         # =====================
-        # PROCESAR TODAS LAS SEMANAS Y TODOS LOS SKUs
+        # PROCESAR
         # =====================
+        results = []
         for _, row in df.iterrows():
             for col in week_cols:
                 qty = row[col]
                 if pd.notna(qty) and qty > 0:
                     start_date = week_starts[col]
-                    results.extend(distribute_weekly_sales(int(qty), start_date, row))
-
-        if not results:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "El archivo no contenía datos de ventas válidos para procesar."}
-            )
+                    records = distribute_weekly_sales(int(qty), start_date, row)
+                    results.extend(records)
 
         df_result = pd.DataFrame(results)
 
-        # Exportar a Excel
-        output = io.BytesIO()
+        # =====================
+        # EXPORTAR
+        # =====================
+        output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_result.to_excel(writer, index=False)
         output.seek(0)
@@ -109,7 +109,6 @@ async def convert_excel(
         )
 
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Ocurrió un error procesando el archivo: {str(e)}"}
-        )
+        # si algo truena, mostramos el error
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
