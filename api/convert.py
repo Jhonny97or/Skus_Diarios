@@ -29,15 +29,15 @@ async def convert_excel(
         content = await file.read()
         xls = pd.ExcelFile(BytesIO(content))
 
-        # tomar siempre la primera hoja
+        # usar siempre la primera hoja
         df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=1)
 
         # =====================
         # CONFIGURACIÓN
         # =====================
         weights = {
-            6: domingo,   # domingo
-            0: lunes,     # lunes
+            6: domingo,
+            0: lunes,
             1: martes,
             2: miercoles,
             3: jueves,
@@ -70,11 +70,11 @@ async def convert_excel(
                 if q > 0:
                     records.append({
                         "Dia": date.strftime("%m/%d/%Y"),
-                        "Referencia": row["NUEVO SAP"],
-                        "Número de Catálogo de Fabricante": row["Número de catálogo de fabricante"],
-                        "Código de Barras": row["Código de barras"],
-                        "Categoría": row["CATEGORIA"],
-                        "Descripción artículo/serv.": row["Descripción del artículo"],
+                        "Referencia": row.get("NUEVO SAP", ""),
+                        "Número de Catálogo de Fabricante": row.get("Número de catálogo de fabricante", ""),
+                        "Código de Barras": row.get("Código de barras", ""),
+                        "Categoría": row.get("CATEGORIA", ""),
+                        "Descripción artículo/serv.": row.get("Descripción del artículo", ""),
                         "qty": q,
                         "value": f"${q * unit_price:.2f}"
                     })
@@ -89,8 +89,7 @@ async def convert_excel(
                 qty = row[col]
                 if pd.notna(qty) and qty > 0:
                     start_date = week_starts[col]
-                    records = distribute_weekly_sales(int(qty), start_date, row)
-                    results.extend(records)
+                    results.extend(distribute_weekly_sales(int(qty), start_date, row))
 
         df_result = pd.DataFrame(results)
 
@@ -109,6 +108,5 @@ async def convert_excel(
         )
 
     except Exception as e:
-        # si algo truena, mostramos el error
         return JSONResponse(status_code=500, content={"error": str(e)})
 
