@@ -30,8 +30,18 @@ async def convert_excel(
         content = await file.read()
         xls = pd.ExcelFile(BytesIO(content))
 
-        # usar siempre la primera hoja, header=1 porque tu archivo empieza en fila 2
-        df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=1)
+        # Leemos todo desde la primera fila (donde está "sep 21 - 27")
+        df_raw = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
+
+        # Fila 0 → contiene los rangos de semana ("sep 21 - 27", "Semana 4", etc.)
+        week_headers = df_raw.iloc[0].tolist()
+
+        # Fila 1 → contiene los encabezados reales ("NUEVO SAP", "Número de catálogo...", etc.)
+        headers = df_raw.iloc[1].tolist()
+
+        # Datos → a partir de la fila 2 en adelante
+        df = df_raw.iloc[2:].copy()
+        df.columns = headers
 
         # =====================
         # CONFIGURACIÓN
@@ -48,44 +58,22 @@ async def convert_excel(
         unit_price = 12
 
         # =====================
-        # DETECTAR COLUMNAS DE SEMANA
+        # MAPEAR SEMANA -> RANGO
         # =====================
-        # Normalizamos nombres de columnas (quitar espacios)
-        df = df.rename(columns={c: str(c).strip() for c in df.columns})
-
-        week_cols = [
-            c for c in df.columns 
-            if "semana" in str(c).lower() or "-" in str(c)
-        ]
-
-        # DEBUG: ver qué columnas de semana está detectando
-        print("Columnas detectadas como semanas:", week_cols)
-
-        # =====================
-        # FUNCIÓN PARA PARSEAR ENCABEZADO DE SEMANA
-        # =====================
-        def parse_week_header(header: str):
-            """
-            Convierte encabezado tipo 'sep 21 - 27' en datetime(2025, 9, 21).
-            """
-            try:
-                parts = header.split(" ")
-                if len(parts) >= 2 and "-" in header:
-                    month_str = parts[0]
-                    start_day = header.split("-")[0].split(" ")[-1].strip()
-                    start_date = parser.parse(f"{month_str} {start_day} 2025")
-                    return start_date
-            except Exception as e:
-                print(f"No se pudo parsear columna {header}: {e}")
-                return None
-            return None
-
-        # Mapa: columna -> fecha de inicio
+        # Creamos diccionario: {nombre_columna: fecha_inicio}
         week_starts = {}
-        for col in week_cols:
-            start_date = parse_week_header(str(col))
-            if start_date:
-                week_starts[col] = start_date
+
+        for idx, col in enumerate(df.columns):
+            raw_header = str(week_headers[idx]).strip()
+
+            if "-" in raw_header:  # ej: "sep 21 - 27"
+                try:
+                    month_str = raw_header.split(" ")[0]
+                    start_day = raw_header.split("-")[0].split(" ")[-1].strip()
+                    start_date = parser.parse(f"{month_str} {start_day} 2025")
+                    week_starts[col] = start_date
+                except Exception as e:
+                    print(f"No se pudo parsear {raw_header}: {e}")
 
         # =====================
         # FUNCIÓN DE DISTRIBUCIÓN
@@ -123,12 +111,10 @@ async def convert_excel(
         # =====================
         results = []
         for _, row in df.iterrows():
-            for col in week_cols:
+            for col, start_date in week_starts.items():
                 qty = row[col]
                 if pd.notna(qty) and qty > 0:
-                    start_date = week_starts.get(col)
-                    if start_date:
-                        results.extend(distribute_weekly_sales(int(qty), start_date, row))
+                    results.extend(distribute_weekly_sales(int(qty), start_date, row))
 
         df_result = pd.DataFrame(results)
 
