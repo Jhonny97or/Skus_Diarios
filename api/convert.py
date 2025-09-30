@@ -30,7 +30,7 @@ async def convert_excel(
         content = await file.read()
         xls = pd.ExcelFile(BytesIO(content))
 
-        # usar siempre la primera hoja
+        # usar siempre la primera hoja, header=1 porque tu archivo empieza en fila 2
         df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=1)
 
         # =====================
@@ -46,14 +46,27 @@ async def convert_excel(
             5: sabado     # sábado
         }
         unit_price = 12
-        week_cols = [c for c in df.columns if str(c).lower().startswith("semana") or "-" in str(c).lower()]
+
+        # =====================
+        # DETECTAR COLUMNAS DE SEMANA
+        # =====================
+        # Normalizamos nombres de columnas (quitar espacios)
+        df = df.rename(columns={c: str(c).strip() for c in df.columns})
+
+        week_cols = [
+            c for c in df.columns 
+            if "semana" in str(c).lower() or "-" in str(c)
+        ]
+
+        # DEBUG: ver qué columnas de semana está detectando
+        print("Columnas detectadas como semanas:", week_cols)
 
         # =====================
         # FUNCIÓN PARA PARSEAR ENCABEZADO DE SEMANA
         # =====================
         def parse_week_header(header: str):
             """
-            Convierte un encabezado tipo 'sep 21 - 27' en datetime(2025, 9, 21).
+            Convierte encabezado tipo 'sep 21 - 27' en datetime(2025, 9, 21).
             """
             try:
                 parts = header.split(" ")
@@ -62,7 +75,8 @@ async def convert_excel(
                     start_day = header.split("-")[0].split(" ")[-1].strip()
                     start_date = parser.parse(f"{month_str} {start_day} 2025")
                     return start_date
-            except:
+            except Exception as e:
+                print(f"No se pudo parsear columna {header}: {e}")
                 return None
             return None
 
