@@ -29,17 +29,15 @@ async def convert_excel(
         # =====================
         content = await file.read()
         xls = pd.ExcelFile(BytesIO(content))
-
-        # Leemos desde la primera fila, sin header automático
         df_raw = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
 
-        # Fila 0 → rangos de semana ("sep 21 - 27", "Semana 4", etc.)
+        # Fila 0 → contiene los rangos de semana ("sep 21 - 27")
         week_headers = df_raw.iloc[0].tolist()
 
-        # Fila 1 → encabezados reales ("NUEVO SAP", "Número de catálogo...", etc.)
+        # Fila 1 → encabezados reales
         headers = df_raw.iloc[1].tolist()
 
-        # Datos → a partir de la fila 2
+        # Datos → a partir de fila 2
         df = df_raw.iloc[2:].copy()
         df.columns = headers
 
@@ -58,18 +56,18 @@ async def convert_excel(
         unit_price = 12
 
         # =====================
-        # MAPEAR SOLO COLUMNAS DE RANGO (ignorar "Semana 4")
+        # PARSEAR FECHAS DIRECTAMENTE DE "sep 21 - 27"
         # =====================
         week_starts = {}
         for idx, col in enumerate(df.columns):
             raw_header = str(week_headers[idx]).strip()
 
-            # Solo columnas que contengan rango de fechas con "-"
             if "-" in raw_header:
                 try:
-                    month_str = raw_header.split(" ")[0]  # ej: "sep"
-                    start_day = raw_header.split("-")[0].split(" ")[-1].strip()  # ej: "21"
-                    start_date = parser.parse(f"{month_str} {start_day} 2025")
+                    # Tomamos solo el primer número como inicio
+                    month_str = raw_header.split(" ")[0]       # ej: "sep"
+                    start_day = raw_header.split("-")[0].split(" ")[-1]  # ej: "21"
+                    start_date = parser.parse(f"{month_str} {start_day} 2025")  # año fijo por ahora
                     week_starts[col] = start_date
                 except Exception as e:
                     print(f"No se pudo parsear {raw_header}: {e}")
