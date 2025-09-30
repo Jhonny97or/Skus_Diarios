@@ -30,16 +30,16 @@ async def convert_excel(
         content = await file.read()
         xls = pd.ExcelFile(BytesIO(content))
 
-        # Leemos todo desde la primera fila (donde está "sep 21 - 27")
+        # Leemos desde la primera fila, sin header automático
         df_raw = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
 
-        # Fila 0 → contiene los rangos de semana ("sep 21 - 27", "Semana 4", etc.)
+        # Fila 0 → rangos de semana ("sep 21 - 27", "Semana 4", etc.)
         week_headers = df_raw.iloc[0].tolist()
 
-        # Fila 1 → contiene los encabezados reales ("NUEVO SAP", "Número de catálogo...", etc.)
+        # Fila 1 → encabezados reales ("NUEVO SAP", "Número de catálogo...", etc.)
         headers = df_raw.iloc[1].tolist()
 
-        # Datos → a partir de la fila 2 en adelante
+        # Datos → a partir de la fila 2
         df = df_raw.iloc[2:].copy()
         df.columns = headers
 
@@ -58,18 +58,17 @@ async def convert_excel(
         unit_price = 12
 
         # =====================
-        # MAPEAR SEMANA -> RANGO
+        # MAPEAR SOLO COLUMNAS DE RANGO (ignorar "Semana 4")
         # =====================
-        # Creamos diccionario: {nombre_columna: fecha_inicio}
         week_starts = {}
-
         for idx, col in enumerate(df.columns):
             raw_header = str(week_headers[idx]).strip()
 
-            if "-" in raw_header:  # ej: "sep 21 - 27"
+            # Solo columnas que contengan rango de fechas con "-"
+            if "-" in raw_header:
                 try:
-                    month_str = raw_header.split(" ")[0]
-                    start_day = raw_header.split("-")[0].split(" ")[-1].strip()
+                    month_str = raw_header.split(" ")[0]  # ej: "sep"
+                    start_day = raw_header.split("-")[0].split(" ")[-1].strip()  # ej: "21"
                     start_date = parser.parse(f"{month_str} {start_day} 2025")
                     week_starts[col] = start_date
                 except Exception as e:
