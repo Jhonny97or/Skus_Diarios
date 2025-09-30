@@ -31,7 +31,7 @@ async def convert_excel(
         xls = pd.ExcelFile(BytesIO(content))
         df_raw = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
 
-        # Fila 0 → contiene los rangos de semana ("sep 21 - 27")
+        # Fila 0 → rangos de semana ("sep 21 - 27")
         week_headers = df_raw.iloc[0].tolist()
 
         # Fila 1 → encabezados reales
@@ -67,13 +67,13 @@ async def convert_excel(
                     # Tomamos solo el primer número como inicio
                     month_str = raw_header.split(" ")[0]       # ej: "sep"
                     start_day = raw_header.split("-")[0].split(" ")[-1]  # ej: "21"
-                    start_date = parser.parse(f"{month_str} {start_day} 2025")  # año fijo por ahora
+                    start_date = parser.parse(f"{month_str} {start_day} 2025")  # año fijo
                     week_starts[col] = start_date
                 except Exception as e:
                     print(f"No se pudo parsear {raw_header}: {e}")
 
         # =====================
-        # FUNCIÓN DE DISTRIBUCIÓN
+        # FUNCIÓN DE DISTRIBUCIÓN (FIX CON weekday)
         # =====================
         def distribute_weekly_sales(qty, start_date, row):
             daily = {d: qty * w for d, w in weights.items()}
@@ -89,7 +89,8 @@ async def convert_excel(
             records = []
             for i in range(7):
                 date = start_date + timedelta(days=i)
-                q = daily_int.get(i, 0)
+                dow = date.weekday()  # 0=lunes ... 6=domingo
+                q = daily_int.get(dow, 0)
                 if q > 0:
                     records.append({
                         "Dia": date.strftime("%m/%d/%Y"),
